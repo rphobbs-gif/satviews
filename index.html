@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sat Views</title>
+<meta name="theme-color" content="#0b1530">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #0b1530; --panel: #14224a; --panel2: #1c2e5e; --text: #f2f5ff; --muted: #b9c4e6;
+    --accent: #ffcf4a; --good: #6be38f; --warn: #ff9b6b; --line: #2c3f78;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 20px; line-height: 1.4; }
+  header { padding: calc(env(safe-area-inset-top) + 12px) 16px 10px; background: var(--panel);
+    display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+  header img { width: 40px; height: 40px; border-radius: 10px; }
+  header h1 { font-size: 1.45rem; margin: 0; letter-spacing: .5px; }
+  header .clock { margin-left: auto; color: var(--muted); font-size: 1rem; text-align: right; }
+  main { padding: 14px 14px 120px; max-width: 900px; margin: 0 auto; }
+  section.tab { display: none; }
+  section.tab.active { display: block; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--panel);
+    border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 1000; }
+  nav button { flex: 1; background: none; border: 0; color: var(--muted); font-size: 1.05rem;
+    padding: 12px 4px 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button .ic { font-size: 1.7rem; line-height: 1; }
+  nav button.active { color: var(--accent); font-weight: 700; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+  .muted { color: var(--muted); }
+  .small { font-size: .9rem; }
+  .btnrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+  .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 16px; font-size: 1rem; text-decoration: none; display: inline-block; cursor: pointer; }
+  .btn.on { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 700; }
+  .video { position: relative; width: 100%; padding-top: 56.25%; background: #000; border-radius: 14px; overflow: hidden; }
+  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .status { font-size: 1.1rem; padding: 12px 14px; border-radius: 12px; margin: 12px 0; background: var(--panel2); }
+  .status.day { border-left: 6px solid var(--accent); }
+  .status.night { border-left: 6px solid #6b8cff; }
+  #map { height: 58vh; min-height: 320px; border-radius: 16px; border: 1px solid var(--line); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+  .stat .lbl { color: var(--muted); font-size: .85rem; }
+  .stat .val { font-size: 1.35rem; font-weight: 700; }
+  .pass { border-left: 6px solid var(--line); }
+  .pass.vis { border-left-color: var(--good); }
+  .pass .when { font-size: 1.3rem; font-weight: 700; }
+  .pass .tag { display: inline-block; font-size: .85rem; padding: 3px 10px; border-radius: 20px; margin-left: 6px; vertical-align: middle; }
+  .tag.vis { background: var(--good); color: #0b2a15; font-weight: 700; }
+  .tag.day { background: #3a4a7a; color: var(--muted); }
+  .pass .path { margin-top: 6px; }
+  .toggle { display: flex; align-items: center; gap: 10px; font-size: 1rem; margin: 6px 0 12px; }
+  .toggle input { width: 26px; height: 26px; }
+  .leaflet-container { font-size: 16px; }
+  .iss-icon { font-size: 34px; line-height: 34px; text-align: center; filter: drop-shadow(0 0 4px #000); }
+  input.text { width: 100%; font-size: 1rem; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a3c; color: var(--text); }
+  .err { color: var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <img src="icon-192.png" alt="">
+  <h1>Sat Views</h1>
+  <div class="clock" id="clock"></div>
+</header>
+
+<main>
+  <!-- LIVE VIDEO -->
+  <section class="tab active" id="tab-live">
+    <div class="btnrow" id="streamButtons"></div>
+    <div class="video"><iframe id="player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
+    <div class="status" id="liveStatus">Working out where the station is…</div>
+    <div class="card">
+      <h2>About these streams</h2>
+      <p class="small muted" id="streamNote"></p>
+      <div class="btnrow">
+        <a class="btn" id="openYT" target="_blank" rel="noopener">Open in YouTube</a>
+        <button class="btn" id="changeLink">Change video link</button>
+      </div>
+      <div id="changeBox" style="display:none">
+        <p class="small">If NASA restarts a stream under a new address, open it in YouTube, copy the link, and paste it here.</p>
+        <input class="text" id="linkInput" placeholder="https://www.youtube.com/watch?v=...">
+        <div class="btnrow"><button class="btn on" id="saveLink">Save</button><button class="btn" id="resetLink">Back to original</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAP -->
+  <section class="tab" id="tab-map">
+    <div id="map"></div>
+    <div class="btnrow">
+      <button class="btn on" id="followBtn">Follow the station</button>
+      <button class="btn" id="layerBtn">Street map</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="lbl">Height</div><div class="val" id="sAlt">–</div></div>
+      <div class="stat"><div class="lbl">Speed</div><div class="val" id="sSpd">–</div></div>
+      <div class="stat"><div class="lbl">Latitude</div><div class="val" id="sLat">–</div></div>
+      <div class="stat"><div class="lbl">Longitude</div><div class="val" id="sLon">–</div></div>
+    </div>
+    <div class="status" id="mapStatus"></div>
+    <p class="small muted">The yellow dashed line is where the station will go over the next 90 minutes (one trip around the Earth). The darker shading is the night side of the Earth.</p>
+  </section>
+
+  <!-- PASSES -->
+  <section class="tab" id="tab-passes">
+    <div class="card">
+      <h2>See it from <span id="placeName">Polson</span></h2>
+      <p class="small muted">The space station looks like a very bright, steady star gliding across the sky, with no blinking lights. You can see it only at dusk or before dawn, when your sky is dark but the station, high up, is still in sunlight.</p>
+      <div class="btnrow">
+        <button class="btn" id="useHere">Use my location</button>
+        <button class="btn" id="usePolson">Back to Polson</button>
+      </div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="visOnly" checked> Show only passes I can see</label>
+    <div id="passList"><p class="muted">Calculating…</p></div>
+    <div class="card small muted">
+      <b>How high is "degrees"?</b> 0° is the horizon and 90° is straight overhead, so 45° is halfway up the sky. Your fist held at arm's length covers about 10°.
+      Predictions use the latest published orbit and are most accurate for the next few days; the station sometimes fires its engines, which shifts later times slightly.
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-tab="live" class="active"><span class="ic">📺</span>Live</button>
+  <button data-tab="map"><span class="ic">🗺️</span>Map</button>
+  <button data-tab="passes"><span class="ic">🔭</span>Passes</button>
+</nav>
+
+<script src="satellite.min.js"></script>
+<script src="orbit.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- small helpers ----------
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('satviews.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('satviews.' + k, JSON.stringify(v)); } catch (e) {} }
+  };
+  const fmtTime = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtDay = d => {
+    const today = new Date(); const tom = new Date(); tom.setDate(today.getDate() + 1);
+    if (d.toDateString() === today.toDateString()) return 'Tonight / Today';
+    if (d.toDateString() === tom.toDateString()) return 'Tomorrow, ' + d.toLocaleDateString([], { weekday: 'long' });
+    return d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+  const POLSON = { name: 'Polson', lat: 47.6935, lon: -114.1632, heightKm: 0.9 };
+
+  // ---------- clock ----------
+  function tickClock() {
+    const n = new Date();
+    $('clock').innerHTML = n.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + '<br>' + fmtTime(n);
+  }
+  tickClock(); setInterval(tickClock, 15000);
+
+  // ---------- tabs ----------
+  let mapReady = false;
+  document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('section.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + b.dataset.tab));
+    store.set('tab', b.dataset.tab);
+    if (b.dataset.tab === 'map') { initMap(); setTimeout(() => map && map.invalidateSize(), 50); }
+    if (b.dataset.tab === 'passes') renderPasses();
+  }));
+
+  // ---------- orbit data (TLE) ----------
+  let satrec = null;
+  async function fetchText(url) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000);
+    try { const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return await r.text(); }
+    finally { clearTimeout(t); }
+  }
+  async function loadTle() {
+    const cached = store.get('tle', null);
+    if (cached && Date.now() - cached.at < 6 * 3600 * 1000) return cached;
+    const sources = [
+      async () => { const t = (await fetchText('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE')).split(/\r?\n/).filter(Boolean); return { l1: t[1], l2: t[2] }; },
+      async () => { const j = JSON.parse(await fetchText('https://api.wheretheiss.at/v1/satellites/25544/tles')); return { l1: j.line1, l2: j.line2 }; },
+      async () => { const j = JSON.parse(await fetchText('https://tle.ivanstanojevic.me/api/tle/25544')); return { l1: j.line1, l2: j.line2 }; }
+    ];
+    for (const src of sources) {
+      try { const t = await src(); if (t.l1 && t.l1.startsWith('1 ') && t.l2.startsWith('2 ')) { t.at = Date.now(); store.set('tle', t); return t; } } catch (e) {}
+    }
+    return cached; // may be old, but better than nothing
+  }
+
+  // ---------- LIVE VIDEO ----------
+  const STREAMS = [
+    { key: 'hd', label: 'Earth views (HD)', id: 'ROboUHfPUrU',
+      note: 'NASA\'s high-definition camera outside the station, pointed at the Earth. When the camera is unavailable NASA plays a recorded loop instead.' },
+    { key: 'iss', label: 'Station feed + voices', id: 'M3HKLzjvKPc',
+      note: 'NASA\'s main station feed: views outside and sometimes inside, with the voices of the crew and Mission Control. A blue screen means the station is briefly out of radio contact.' },
+    { key: 'sen', label: 'Sen 4K', id: 'fO9e9jnhYK8',
+      note: 'A commercial 4K camera on the station run by the company Sen. Often the sharpest picture, though it is not always pointed at the Earth.' }
+  ];
+  let currentStream = store.get('stream', 'hd');
+  const customIds = store.get('customIds', {});
+  function streamId(s) { return customIds[s.key] || s.id; }
+  function showStream(key) {
+    currentStream = key; store.set('stream', key);
+    const s = STREAMS.find(x => x.key === key) || STREAMS[0];
+    const id = streamId(s);
+    $('player').src = 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=1&playsinline=1&rel=0';
+    $('openYT').href = 'https://www.youtube.com/watch?v=' + id;
+    $('streamNote').textContent = s.note + ' The sound starts muted; tap the speaker icon on the video to hear it.';
+    document.querySelectorAll('#streamButtons .btn').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  }
+  STREAMS.forEach(s => {
+    const b = document.createElement('button'); b.className = 'btn'; b.textContent = s.label; b.dataset.key = s.key;
+    b.onclick = () => showStream(s.key); $('streamButtons').appendChild(b);
+  });
+  $('changeLink').onclick = () => { $('changeBox').style.display = $('changeBox').style.display === 'none' ? 'block' : 'none'; };
+  $('saveLink').onclick = () => {
+    const m = $('linkInput').value.match(/(?:v=|youtu\.be\/|\/live\/|\/embed\/)([A-Za-z0-9_-]{11})/);
+    if (!m) { alertBox('That doesn\'t look like a YouTube video link.'); return; }
+    customIds[currentStream] = m[1]; store.set('customIds', customIds); showStream(currentStream);
+    $('changeBox').style.display = 'none'; $('linkInput').value = '';
+  };
+  $('resetLink').onclick = () => { delete customIds[currentStream]; store.set('customIds', customIds); showStream(currentStream); $('changeBox').style.display = 'none'; };
+  function alertBox(msg) { const p = document.createElement('p'); p.className = 'err small'; p.textContent = msg; $('changeBox').appendChild(p); setTimeout(() => p.remove(), 5000); }
+
+  function updateLiveStatus() {
+    const el = $('liveStatus');
+    if (!satrec) { el.textContent = 'Couldn\'t get the station\'s orbit yet. The video still works.'; return; }
+    const now = new Date(); const p = Orbit.position(satrec, now);
+    if (!p) return;
+    if (p.sunlit) {
+      el.className = 'status day';
+      el.textContent = '☀️ The station is over the daylight side of the Earth right now, so the cameras should show the planet below.';
+    } else {
+      const m = Orbit.minutesUntilSunlit(satrec, now);
+      el.className = 'status night';
+      el.textContent = '🌙 The station is over the night side right now, so the picture may look black (sometimes you can spot city lights or lightning).' +
+        (m ? ' It comes back into daylight in about ' + m + ' minute' + (m === 1 ? '' : 's') + '.' : '');
+    }
+  }
+
+  // ---------- MAP ----------
+  let map = null, issMarker = null, trackLayer = null, nightLayer = null, follow = true, imagery, streets, labels, onImagery = true;
+  function initMap() {
+    if (mapReady || typeof L === 'undefined') return;
+    mapReady = true;
+    map = L.map('map', { worldCopyJump: true, zoomControl: true }).setView([20, -100], 2);
+    imagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 10, attribution: 'Imagery © Esri' });
+    labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 10 });
+    streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 10, attribution: '© OpenStreetMap' });
+    imagery.addTo(map); labels.addTo(map);
+    L.circleMarker([POLSON.lat, POLSON.lon], { radius: 7, color: '#fff', fillColor: '#ff5a5a', fillOpacity: 1, weight: 2 })
+      .addTo(map).bindTooltip('Polson');
+    issMarker = L.marker([0, 0], { icon: L.divIcon({ className: 'iss-icon', html: '🛰️', iconSize: [34, 34], iconAnchor: [17, 17] }) }).addTo(map);
+    map.on('dragstart', () => { follow = false; $('followBtn').classList.remove('on'); });
+    updateMap(true);
+  }
+  $('followBtn').onclick = () => { follow = true; $('followBtn').classList.add('on'); updateMap(true); };
+  $('layerBtn').onclick = () => {
+    if (!map) return;
+    onImagery = !onImagery;
+    if (onImagery) { map.removeLayer(streets); imagery.addTo(map); labels.addTo(map); $('layerBtn').textContent = 'Street map'; }
+    else { map.removeLayer(imagery); map.removeLayer(labels); streets.addTo(map); $('layerBtn').textContent = 'Satellite map'; }
+    if (nightLayer) nightLayer.bringToFront(); if (trackLayer) trackLayer.bringToFront();
+  };
+
+  let lastTrack = 0;
+  function updateMap(center) {
+    if (!map || !satrec) return;
+    const now = new Date(); const p = Orbit.position(satrec, now);
+    if (!p) return;
+    issMarker.setLatLng([p.lat, p.lon]);
+    if (follow || center) map.panTo([p.lat, p.lon], { animate: !center });
+    if (Date.now() - lastTrack > 60000 || center) {
+      lastTrack = Date.now();
+      if (trackLayer) map.removeLayer(trackLayer);
+      trackLayer = L.layerGroup(Orbit.groundTrack(satrec, now, 92, 30).map(seg =>
+        L.polyline(seg, { color: '#ffcf4a', weight: 3, dashArray: '8 8', opacity: .9 }))).addTo(map);
+      if (nightLayer) map.removeLayer(nightLayer);
+      nightLayer = L.polygon(Orbit.nightPolygon(now), { stroke: false, fillColor: '#000814', fillOpacity: .45, interactive: false }).addTo(map);
+    }
+    $('sAlt').textContent = Math.round(p.altKm * 0.621371) + ' mi';
+    $('sSpd').textContent = Math.round(p.speedKmh * 0.621371).toLocaleString() + ' mph';
+    $('sLat').textContent = Math.abs(p.lat).toFixed(1) + '° ' + (p.lat >= 0 ? 'N' : 'S');
+    $('sLon').textContent = Math.abs(p.lon).toFixed(1) + '° ' + (p.lon >= 0 ? 'E' : 'W');
+    const miles = distanceMiles(p.lat, p.lon, POLSON.lat, POLSON.lon);
+    $('mapStatus').className = 'status ' + (p.sunlit ? 'day' : 'night');
+    $('mapStatus').textContent = (p.sunlit ? '☀️ In sunlight. ' : '🌙 In Earth\'s shadow. ') +
+      'The station is about ' + Math.round(miles).toLocaleString() + ' miles from Polson and goes once around the Earth every 92 minutes.';
+  }
+  function distanceMiles(a1, o1, a2, o2) {
+    const r = Math.PI / 180, d = Math.acos(Math.min(1, Math.sin(a1 * r) * Math.sin(a2 * r) + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.cos((o1 - o2) * r)));
+    return d * 3958.8;
+  }
+
+  // ---------- PASSES ----------
+  let observer = store.get('observer', POLSON);
+  let passCache = null, passCacheKey = '';
+  function heightWords(el) { return el >= 70 ? 'nearly straight overhead' : el >= 45 ? 'high in the sky' : el >= 25 ? 'about a third of the way up' : 'low in the sky'; }
+  function brightness(p) {
+    if (p.visSeconds < 60) return 'Brief glimpse';
+    return p.visMaxEl >= 45 ? 'Very bright' : p.visMaxEl >= 25 ? 'Bright' : 'Fairly bright, low down';
+  }
+
+  function renderPasses() {
+    $('placeName').textContent = observer.name;
+    const list = $('passList');
+    if (!satrec) { list.innerHTML = '<p class="err">Couldn\'t get the station\'s orbit. Check the internet connection and reopen the app.</p>'; return; }
+    const key = observer.lat + ',' + observer.lon + ',' + Math.floor(Date.now() / 600000);
+    if (key !== passCacheKey) {
+      const start = new Date(Date.now() - 10 * 60000);
+      passCache = Orbit.findPasses(satrec, observer, start, 10, { minEl: 10 }).filter(p => p.end > new Date());
+      passCacheKey = key;
+    }
+    const visOnly = $('visOnly').checked;
+    const shown = passCache.filter(p => !visOnly || p.visible);
+    if (!shown.length) {
+      list.innerHTML = '<div class="card">' + (visOnly
+        ? 'No visible passes in the next 10 days. That happens for a week or two at a time, when the station only crosses your sky in daylight or in the middle of the night. Untick the box above to see every pass.'
+        : 'No passes found in the next 10 days.') + '</div>';
+      return;
+    }
+    let html = '', lastDay = '';
+    shown.forEach(p => {
+      const day = fmtDay(p.start);
+      if (day !== lastDay) { html += '<h3 style="margin:18px 4px 8px">' + day + '</h3>'; lastDay = day; }
+      const mins = Math.max(1, Math.round((p.end - p.start) / 60000));
+      let extra = '';
+      if (p.visible) {
+        const fades = p.visEnd && p.visEnd < new Date(p.end.getTime() - 40000);
+        const appears = p.visStart && p.visStart > new Date(p.start.getTime() + 40000);
+        if (appears) extra += ' It lights up around ' + fmtTime(p.visStart) + ' as it comes out of the Earth\'s shadow.';
+        if (fades) extra += ' It fades out around ' + fmtTime(p.visEnd) + ' as it passes into the Earth\'s shadow.';
+      } else {
+        extra = p.sunEl > -6 ? ' Your sky is too light then to see it.' : ' The station is in the Earth\'s shadow, so it can\'t be seen.';
+      }
+      html += '<div class="card pass' + (p.visible ? ' vis' : '') + '">' +
+        '<div class="when">' + fmtTime(p.start) + ' – ' + fmtTime(p.end) +
+        (p.visible ? '<span class="tag vis">' + brightness(p) + '</span>' : '<span class="tag day">Not visible</span>') + '</div>' +
+        '<div class="path">Rises in the <b>' + Orbit.compass(p.startAz) + '</b>, climbs to <b>' + Math.round(p.maxEl) + '°</b> (' +
+        heightWords(p.maxEl) + ') in the ' + Orbit.compass(p.maxAz) + ' at ' + fmtTime(p.maxTime) +
+        ', sets in the <b>' + Orbit.compass(p.endAz) + '</b>. About ' + mins + ' minute' + (mins === 1 ? '' : 's') + '.</div>' +
+        (extra ? '<div class="small muted" style="margin-top:6px">' + extra.trim() + '</div>' : '') +
+        '</div>';
+    });
+    list.innerHTML = html;
+  }
+  $('visOnly').onchange = renderPasses;
+  $('useHere').onclick = () => {
+    if (!navigator.geolocation) return;
+    $('useHere').textContent = 'Finding you…';
+    navigator.geolocation.getCurrentPosition(pos => {
+      observer = { name: 'your location', lat: +pos.coords.latitude.toFixed(4), lon: +pos.coords.longitude.toFixed(4), heightKm: (pos.coords.altitude || 0) / 1000 };
+      store.set('observer', observer); $('useHere').textContent = 'Use my location'; passCacheKey = ''; renderPasses();
+    }, () => { $('useHere').textContent = 'Location not available'; setTimeout(() => $('useHere').textContent = 'Use my location', 4000); },
+    { enableHighAccuracy: false, timeout: 15000 });
+  };
+  $('usePolson').onclick = () => { observer = POLSON; store.set('observer', observer); passCacheKey = ''; renderPasses(); };
+
+  // ---------- start ----------
+  showStream(currentStream);
+  (async () => {
+    const tle = await loadTle();
+    if (tle) { try { satrec = Orbit.makeSatrec(tle.l1, tle.l2); } catch (e) { satrec = null; } }
+    updateLiveStatus();
+    const tab = store.get('tab', 'live');
+    const btn = document.querySelector('nav button[data-tab="' + tab + '"]');
+    if (btn && tab !== 'live') btn.click();
+    if (tab === 'passes') renderPasses();
+    setInterval(() => {
+      updateLiveStatus();
+      if (document.getElementById('tab-map').classList.contains('active')) updateMap(false);
+    }, 3000);
+    // refresh orbit data every 6 hours if left open
+    setInterval(async () => { const t = await loadTle(); if (t) satrec = Orbit.makeSatrec(t.l1, t.l2); }, 3600 * 1000);
+  })();
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
