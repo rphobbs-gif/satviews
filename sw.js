@@ -1,6 +1,6 @@
 // Sat Views service worker: lets the app open quickly and install on the home screen.
 // App files are fetched fresh when online, and the saved copy is used when offline.
-const CACHE = 'satviews-v2';
+const CACHE = 'satviews-v3';
 const FILES = ['./', 'index.html', 'orbit.js', 'satellite.min.js', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
