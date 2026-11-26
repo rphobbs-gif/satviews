@@ -62,6 +62,16 @@
   .iss-icon { font-size: 34px; line-height: 34px; text-align: center; filter: drop-shadow(0 0 4px #000); }
   input.text { width: 100%; font-size: 1rem; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: #0e1a3c; color: var(--text); }
   .err { color: var(--warn); }
+  #eyeHome, #eyeWorld { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #eyeHome .btn, #eyeWorld .btn { padding: 10px 8px; text-align: center; font-size: .95rem; }
+  .grouplbl { color: var(--muted); font-size: .9rem; margin: 10px 2px -4px; text-transform: uppercase; letter-spacing: .5px; }
+  .eyebox { position: relative; width: 100%; aspect-ratio: 1 / 1; background: #000; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); margin-top: 10px; }
+  .eyebox img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .eyegrid { position: absolute; inset: 0; display: none; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .eyegrid img { width: 100%; height: 100%; display: block; }
+  .eyetime { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,.65); padding: 6px 12px; border-radius: 10px; font-size: 1rem; }
+  .eyewait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--muted); }
+  nav button { font-size: .95rem; }
 </style>
 </head>
 <body>
@@ -74,7 +84,10 @@
 <main>
   <!-- LIVE VIDEO -->
   <section class="tab active" id="tab-live">
+    <div class="grouplbl">From the space station</div>
     <div class="btnrow" id="streamButtons"></div>
+    <div class="grouplbl">From European weather satellites</div>
+    <div class="btnrow" id="streamButtonsEU"></div>
     <div class="video"><iframe id="player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
     <div class="status" id="liveStatus">Working out where the station is…</div>
     <div class="card">
@@ -109,6 +122,29 @@
     <p class="small muted">The yellow dashed line is where the station will go over the next 90 minutes (one trip around the Earth). The darker shading is the night side of the Earth.</p>
   </section>
 
+  <!-- WEATHER EYE -->
+  <section class="tab" id="tab-eye">
+    <div class="grouplbl">Close to home</div>
+    <div class="btnrow" id="eyeHome"></div>
+    <div class="grouplbl">The whole Earth, region by region</div>
+    <div class="btnrow" id="eyeWorld"></div>
+    <div class="eyebox">
+      <img id="eyeImg" alt="Satellite picture">
+      <div class="eyegrid" id="eyeGrid"></div>
+      <div class="eyetime" id="eyeTime"></div>
+      <div class="eyewait" id="eyeWait">Fetching the latest picture…</div>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="eyeLoopBtn">▶ Play loop</button>
+      <a class="btn" id="eyeFull" target="_blank" rel="noopener">Open full size</a>
+    </div>
+    <div class="card">
+      <h2 id="eyeTitle"></h2>
+      <p class="small" id="eyeNote"></p>
+      <p class="small muted" id="eyeCredit"></p>
+    </div>
+  </section>
+
   <!-- PASSES -->
   <section class="tab" id="tab-passes">
     <div class="card">
@@ -132,6 +168,7 @@
   <button data-tab="live" class="active"><span class="ic">📺</span>Live</button>
   <button data-tab="map"><span class="ic">🗺️</span>Map</button>
   <button data-tab="passes"><span class="ic">🔭</span>Passes</button>
+  <button data-tab="eye"><span class="ic">🌍</span>Weather Eye</button>
 </nav>
 
 <script src="satellite.min.js"></script>
@@ -171,6 +208,7 @@
     store.set('tab', b.dataset.tab);
     if (b.dataset.tab === 'map') { initMap(); setTimeout(() => map && map.invalidateSize(), 50); }
     if (b.dataset.tab === 'passes') renderPasses();
+    if (b.dataset.tab === 'eye') initEye(); else if (eyePlaying) stopLoop();
   }));
 
   // ---------- orbit data (TLE) ----------
@@ -201,7 +239,15 @@
     { key: 'iss', label: 'Station feed + voices', id: 'M3HKLzjvKPc',
       note: 'NASA\'s main station feed: views outside and sometimes inside, with the voices of the crew and Mission Control. A blue screen means the station is briefly out of radio contact.' },
     { key: 'sen', label: 'Sen 4K', id: 'fO9e9jnhYK8',
-      note: 'A commercial 4K camera on the station run by the company Sen. Often the sharpest picture, though it is not always pointed at the Earth.' }
+      note: 'A commercial 4K camera on the station run by the company Sen, mounted on ESA\'s Columbus module. Often the sharpest picture, though it is not always pointed at the Earth.' },
+    { key: 'eu', group: 'eum', label: 'Europe', id: 'nigtvuOspmM',
+      note: 'EUMETSAT\'s Meteosat weather satellite, 22,000 miles above the equator, looking at Europe. The stream updates every 10 to 15 minutes as new pictures arrive, so the clouds creep rather than move.' },
+    { key: 'af', group: 'eum', label: 'Africa', id: 'U3jRSL3y8Vc',
+      note: 'EUMETSAT\'s Meteosat weather satellite looking at Africa, from the Mediterranean to the Cape. Updated every 10 to 15 minutes as new pictures arrive.' },
+    { key: 'atl', group: 'eum', label: 'Atlantic', id: '1RxnnypuvYQ',
+      note: 'The newest European weather satellite (Meteosat Third Generation) looking at the whole Atlantic-facing side of the Earth, including the eastern Americas. Updated every 10 minutes.' },
+    { key: 's3', group: 'eum', label: 'Sentinel-3', id: 'OIAkaRzN2O4',
+      note: 'Europe\'s Copernicus Sentinel-3 satellites fly much lower, over the poles, photographing the Earth in long strips. This stream shows the strips as they arrive, so it builds up a patchwork picture of the planet.' }
   ];
   let currentStream = store.get('stream', 'hd');
   const customIds = store.get('customIds', {});
@@ -213,11 +259,13 @@
     $('player').src = 'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=1&playsinline=1&rel=0';
     $('openYT').href = 'https://www.youtube.com/watch?v=' + id;
     $('streamNote').textContent = s.note + ' The sound starts muted; tap the speaker icon on the video to hear it.';
-    document.querySelectorAll('#streamButtons .btn').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+    document.querySelectorAll('#streamButtons .btn, #streamButtonsEU .btn').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+    updateLiveStatus();
   }
   STREAMS.forEach(s => {
     const b = document.createElement('button'); b.className = 'btn'; b.textContent = s.label; b.dataset.key = s.key;
-    b.onclick = () => showStream(s.key); $('streamButtons').appendChild(b);
+    b.onclick = () => showStream(s.key);
+    $(s.group === 'eum' ? 'streamButtonsEU' : 'streamButtons').appendChild(b);
   });
   $('changeLink').onclick = () => { $('changeBox').style.display = $('changeBox').style.display === 'none' ? 'block' : 'none'; };
   $('saveLink').onclick = () => {
@@ -231,6 +279,12 @@
 
   function updateLiveStatus() {
     const el = $('liveStatus');
+    const s = STREAMS.find(x => x.key === currentStream);
+    if (s && s.group === 'eum') {
+      el.className = 'status day';
+      el.textContent = '🛰️ This view comes from a European satellite, not the space station. Wherever it is night in the picture, that part looks dark. Europe and Africa are 8 to 9 hours ahead of Polson, so they are brightest during your night and early morning.';
+      return;
+    }
     if (!satrec) { el.textContent = 'Couldn\'t get the station\'s orbit yet. The video still works.'; return; }
     const now = new Date(); const p = Orbit.position(satrec, now);
     if (!p) return;
@@ -364,6 +418,198 @@
     { enableHighAccuracy: false, timeout: 15000 });
   };
   $('usePolson').onclick = () => { observer = POLSON; store.set('observer', observer); passCacheKey = ''; renderPasses(); };
+
+  // ---------- WEATHER EYE ----------
+  const SLIDER = 'https://slider.cira.colostate.edu/data/imagery/';
+  const GEOCOLOR = 'The colors are close to what your eye would see in daylight. On the night side the picture switches to infrared: clouds show as gray-blue, with city lights added from a map.';
+  const EYE = [
+    { key: 'nr', group: 'home', label: 'Montana & Rockies', type: 'star',
+      still: 'https://cdn.star.nesdis.noaa.gov/GOES19/ABI/SECTOR/nr/GEOCOLOR/1200x1200.jpg',
+      loop: 'https://cdn.star.nesdis.noaa.gov/GOES19/ABI/SECTOR/nr/GEOCOLOR/GOES19-NR-GEOCOLOR-600x600.gif',
+      full: 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G19&sector=nr',
+      title: 'Montana and the Northern Rockies',
+      note: 'From GOES-East (GOES-19), America\'s weather satellite 22,000 miles above the equator. It covers Montana, Idaho, Wyoming and their neighbors, seen at a slant because the satellite is far to the southeast, so western Montana is toward the upper left. A new picture every 5 minutes. The time printed along the bottom is in "Z" (Greenwich) time, which is 7 hours ahead of Polson. ' + GEOCOLOR + ' The loop is a large download (about 8 MB), so it is best on Wi-Fi.',
+      credit: 'Pictures: NOAA / NESDIS Center for Satellite Applications and Research.' },
+    { key: 'pnw', group: 'home', label: 'Pacific Northwest', type: 'star',
+      still: 'https://cdn.star.nesdis.noaa.gov/GOES18/ABI/SECTOR/pnw/GEOCOLOR/1200x1200.jpg',
+      loop: 'https://cdn.star.nesdis.noaa.gov/GOES18/ABI/SECTOR/pnw/GEOCOLOR/GOES18-PNW-GEOCOLOR-600x600.gif',
+      full: 'https://www.star.nesdis.noaa.gov/GOES/sector.php?sat=G18&sector=pnw',
+      title: 'The Pacific Northwest',
+      note: 'From GOES-West (GOES-18), looking at Washington, Oregon, Idaho and western Montana, with the Pacific storms that bring our weather coming in from the left. A new picture every 5 minutes; the time along the bottom is Greenwich ("Z") time, 7 hours ahead of Polson. ' + GEOCOLOR,
+      credit: 'Pictures: NOAA / NESDIS Center for Satellite Applications and Research.' },
+    { key: 'goesw', group: 'world', label: 'Americas & Pacific', type: 'slider', sat: 'goes-18', every: 10, sec: '20',
+      title: 'The Americas and the Pacific (GOES-West)',
+      note: 'America\'s GOES-West satellite, parked over the Pacific, sees from Alaska to the tip of South America and out past Hawaii. A new full-Earth picture every 10 minutes. ' + GEOCOLOR,
+      credit: 'Data: NOAA. Pictures: CIRA / RAMMB SLIDER, Colorado State University.' },
+    { key: 'goese', group: 'world', label: 'Americas & Atlantic', type: 'slider', sat: 'goes-19', every: 10, sec: '20',
+      title: 'The Americas and the Atlantic (GOES-East)',
+      note: 'America\'s GOES-East satellite, parked over the equator south of Florida, sees all of North and South America and the Atlantic, with the edge of Africa on the right. A new picture every 10 minutes. ' + GEOCOLOR,
+      credit: 'Data: NOAA. Pictures: CIRA / RAMMB SLIDER, Colorado State University.' },
+    { key: 'msg', group: 'world', label: 'Europe & Africa', type: 'slider', sat: 'meteosat-0deg', every: 15, sec: '00',
+      title: 'Europe and Africa (Meteosat)',
+      note: 'Europe\'s Meteosat weather satellite, run by EUMETSAT, parked over the Gulf of Guinea off West Africa. It sees all of Africa, Europe and the Middle East. A new picture every 15 minutes. Europe is 8 hours ahead of Polson, so it is in darkness during your evening. ' + GEOCOLOR,
+      credit: 'Data: EUMETSAT. Pictures: CIRA / RAMMB SLIDER, Colorado State University.' },
+    { key: 'iodc', group: 'world', label: 'India & Indian Ocean', type: 'slider', sat: 'meteosat-9', every: 15, sec: '00',
+      title: 'India and the Indian Ocean (Meteosat-9)',
+      note: 'An older European Meteosat that EUMETSAT keeps parked over the Indian Ocean, to watch India, the Middle East and East Africa. India is 12½ hours ahead of Polson, so it is in daylight during your night. A new picture every 15 minutes. ' + GEOCOLOR,
+      credit: 'Data: EUMETSAT. Pictures: CIRA / RAMMB SLIDER, Colorado State University.' },
+    { key: 'hima', group: 'world', label: 'Asia & Australia', type: 'slider', sat: 'himawari', every: 10, sec: '00',
+      title: 'Asia, Australia and the Western Pacific (Himawari-9)',
+      note: 'Japan\'s Himawari-9 ("sunflower"), run by the Japan Meteorological Agency, parked above New Guinea. It sees Japan, China, Southeast Asia and all of Australia, which uses it as its own weather satellite. Australia is about 18 hours ahead of Polson, so its daylight falls during your late afternoon and evening. A new picture every 10 minutes. ' + GEOCOLOR,
+      credit: 'Data: Japan Meteorological Agency. Pictures: CIRA / RAMMB SLIDER, Colorado State University.' },
+    { key: 'epic', group: 'world', label: 'Whole Earth', type: 'epic',
+      title: 'The whole Earth from a million miles away (DSCOVR)',
+      note: 'Taken by NASA\'s EPIC camera on the DSCOVR spacecraft, which sits between the Earth and the Sun, so it always sees the whole sunlit side. NASA posts about a dozen pictures a day, usually a day or two after they are taken. The first picture shown is the one most nearly facing Montana; play the loop to watch the Earth turn through a whole day.',
+      credit: 'Pictures: NASA EPIC team / NOAA DSCOVR.' }
+  ];
+  let eyeView = null, eyeFrames = [], eyeTimer = null, eyePlaying = false, eyeToken = 0, eyeReady = false;
+  const pad2 = n => String(n).padStart(2, '0');
+  function sliderStamp(d, sec) {
+    return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + sec;
+  }
+  function sliderUrl(v, d, zoom, tile) {
+    const st = sliderStamp(d, v.sec);
+    return SLIDER + st.slice(0, 4) + '/' + st.slice(4, 6) + '/' + st.slice(6, 8) + '/' + v.sat + '---full_disk/geocolor/' + st + '/' + zoom + '/' + tile + '.png';
+  }
+  function loadImg(url, ms) {
+    return new Promise(res => {
+      const i = new Image(); let done = false;
+      const fin = ok => { if (!done) { done = true; res(ok ? i : null); } };
+      i.onload = () => fin(true); i.onerror = () => fin(false); i.src = url;
+      setTimeout(() => fin(false), ms || 15000);
+    });
+  }
+  function agoText(d) {
+    const m = Math.round((Date.now() - d.getTime()) / 60000);
+    if (m < 60) return m + ' min ago';
+    if (m < 48 * 60) return Math.round(m / 60) + ' hours ago';
+    return Math.round(m / 1440) + ' days ago';
+  }
+  function timeText(d) {
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return (sameDay ? '' : d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ', ') + fmtTime(d) + ' (' + agoText(d) + ')';
+  }
+  async function findSliderLatest(v) {
+    const step = v.every * 60000;
+    let t = Math.floor((Date.now() - 12 * 60000) / step) * step;
+    for (let i = 0; i < 20; i++, t -= step) {
+      const d = new Date(t);
+      if (await loadImg(sliderUrl(v, d, '00', '000_000'), 8000)) return d;
+    }
+    return null;
+  }
+  function stopLoop() {
+    if (eyeTimer) clearTimeout(eyeTimer); eyeTimer = null; eyePlaying = false;
+    $('eyeLoopBtn').textContent = '▶ Play loop';
+  }
+  function showEyeImage(src, label) {
+    if (src) { $('eyeGrid').style.display = 'none'; $('eyeImg').style.display = ''; $('eyeImg').src = src; }
+    else $('eyeImg').style.display = 'none'; $('eyeTime').textContent = label || ''; $('eyeTime').style.display = label ? '' : 'none';
+  }
+  async function selectEye(key) {
+    const v = EYE.find(x => x.key === key) || EYE[0];
+    eyeView = v; store.set('eye', v.key); stopLoop(); eyeFrames = [];
+    const token = ++eyeToken;
+    document.querySelectorAll('#eyeHome .btn, #eyeWorld .btn').forEach(b => b.classList.toggle('on', b.dataset.key === v.key));
+    $('eyeTitle').textContent = v.title; $('eyeNote').textContent = v.note; $('eyeCredit').textContent = v.credit;
+    $('eyeWait').style.display = 'flex'; $('eyeWait').textContent = 'Fetching the latest picture…';
+    $('eyeImg').removeAttribute('src'); $('eyeGrid').style.display = 'none'; $('eyeTime').style.display = 'none';
+    try {
+      if (v.type === 'star') {
+        const url = v.still + '?t=' + Math.floor(Date.now() / 300000);
+        const ok = await loadImg(url);
+        if (token !== eyeToken) return;
+        if (!ok) throw new Error('no image');
+        showEyeImage(url, '');
+        $('eyeFull').href = v.full;
+      } else if (v.type === 'slider') {
+        const d = await findSliderLatest(v);
+        if (token !== eyeToken) return;
+        if (!d) throw new Error('no image');
+        v.latest = d;
+        // sharper still: show the 2 x 2 higher-zoom tiles on a canvas
+        const tiles = await Promise.all(['000_000', '000_001', '001_000', '001_001'].map(t => loadImg(sliderUrl(v, d, '01', t))));
+        if (token !== eyeToken) return;
+        if (tiles.every(Boolean)) {
+          showEyeImage(null, timeText(d));
+          const g = $('eyeGrid'); g.innerHTML = ''; tiles.forEach(im => g.appendChild(im)); g.style.display = 'grid';
+        } else {
+          showEyeImage(sliderUrl(v, d, '00', '000_000'), timeText(d));
+        }
+        $('eyeFull').href = 'https://slider.cira.colostate.edu/?sat=' + v.sat + '&sec=full_disk&p%5B0%5D=geocolor&z=0&im=24&motion=loop';
+      } else if (v.type === 'epic') {
+        const r = await fetch('https://epic.gsfc.nasa.gov/api/natural', { cache: 'no-store' });
+        const list = await r.json();
+        if (token !== eyeToken) return;
+        if (!list.length) throw new Error('no image');
+        v.list = list.map(it => {
+          const d = new Date(it.date.replace(' ', 'T') + 'Z');
+          return { d, lon: it.centroid_coordinates.lon,
+            url: 'https://epic.gsfc.nasa.gov/archive/natural/' + d.getUTCFullYear() + '/' + pad2(d.getUTCMonth() + 1) + '/' + pad2(d.getUTCDate()) + '/jpg/' + it.image + '.jpg' };
+        }).sort((a, b) => a.d - b.d);
+        const lonDiff = x => Math.abs(((x.lon + 114) % 360 + 540) % 360 - 180);
+        const best = v.list.slice().sort((a, b) => lonDiff(a) - lonDiff(b))[0];
+        const ok = await loadImg(best.url);
+        if (token !== eyeToken) return;
+        if (!ok) throw new Error('no image');
+        showEyeImage(best.url, timeText(best.d));
+        $('eyeFull').href = best.url;
+      }
+      $('eyeWait').style.display = 'none';
+    } catch (e) {
+      if (token !== eyeToken) return;
+      $('eyeWait').textContent = 'This picture isn\'t available right now. Check the internet connection, or try again in a few minutes.';
+    }
+  }
+  async function playLoop() {
+    const v = eyeView; if (!v) return;
+    if (eyePlaying) { stopLoop(); return; }
+    const token = eyeToken;
+    eyePlaying = true; $('eyeLoopBtn').textContent = '⏸ Stop loop';
+    if (v.type === 'star') {
+      const url = v.loop + '?t=' + Math.floor(Date.now() / 300000);
+      $('eyeWait').style.display = 'flex'; $('eyeWait').textContent = 'Loading the loop…';
+      const ok = await loadImg(url, 30000);
+      if (token !== eyeToken || !eyePlaying) return;
+      $('eyeWait').style.display = 'none';
+      if (ok) showEyeImage(url, ''); else { $('eyeWait').style.display = 'flex'; $('eyeWait').textContent = 'The loop isn\'t available right now.'; }
+      return;
+    }
+    if (!eyeFrames.length) {
+      $('eyeTime').style.display = ''; $('eyeTime').textContent = 'Loading pictures…';
+      let wanted = [];
+      if (v.type === 'slider' && v.latest) {
+        for (let i = 17; i >= 0; i--) {
+          const d = new Date(v.latest.getTime() - i * v.every * 60000);
+          wanted.push({ d, url: sliderUrl(v, d, '00', '000_000') });
+        }
+      } else if (v.type === 'epic' && v.list) wanted = v.list;
+      const got = await Promise.all(wanted.map(f => loadImg(f.url, 20000).then(ok => ok ? f : null)));
+      if (token !== eyeToken || !eyePlaying) return;
+      eyeFrames = got.filter(Boolean);
+    }
+    if (eyeFrames.length < 2) { stopLoop(); return; }
+    let i = 0;
+    const step = () => {
+      if (!eyePlaying || token !== eyeToken) return;
+      const f = eyeFrames[i];
+      showEyeImage(f.url, timeText(f.d));
+      const last = i === eyeFrames.length - 1;
+      i = last ? 0 : i + 1;
+      eyeTimer = setTimeout(step, last ? 1800 : (v.type === 'epic' ? 700 : 400));
+    };
+    step();
+  }
+  function initEye() {
+    if (eyeReady) return; eyeReady = true;
+    EYE.forEach(v => {
+      const b = document.createElement('button'); b.className = 'btn'; b.textContent = v.label; b.dataset.key = v.key;
+      b.onclick = () => selectEye(v.key);
+      $(v.group === 'home' ? 'eyeHome' : 'eyeWorld').appendChild(b);
+    });
+    $('eyeLoopBtn').onclick = playLoop;
+    selectEye(store.get('eye', 'nr'));
+  }
 
   // ---------- start ----------
   showStream(currentStream);
